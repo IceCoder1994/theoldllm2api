@@ -1,6 +1,6 @@
 /**
 * Universal LLM Proxy - Deno Deploy
-* Updated logic: Create Persona (Provider/Model override) -> Create Session -> Send Message
+* Mode: Disposable Persona (Simulates Browser Exact Behavior)
 */
 
 // === 配置区域 ===
@@ -8,10 +8,9 @@ const UPSTREAM_ORIGIN = "https://theoldllm.vercel.app";
 const DEFAULT_CHAT_MODEL = "ent-gpt-4o";
 
 // 默认 Token
-const FALLBACK_TOKEN = "Bearer ";
+const FALLBACK_TOKEN = "Bearer on_tenant_65566e34-de7f-490a-b88f-32ac8203b659.FlFtgizBOIHSKUrSYbSiT23u7VK3-AHqf64TtjN5v0qP-8AD8QJQ6RLxl0zG9Cgjj5R5ICdgNYFBz9JSv3OJcN3LiKtA6oJTj9CF_1nKjkZQ-InxkNfhEzktF52PXVvFxy7H1IR5JH9PnmMo467YfkAzf8z8vbRmW9WUQcqhBEMuxogPfqAIL1b60F8wGup7WChnADayGVAXyg0ihs4K-fXRyiR7OvXRii05DGX9XT7KtJvb24-XY_VEmWi8OO_o";
 
-// === 模型定义 (保持原样，省略部分以节省空间，逻辑中通用) ===
-// 请确保这里包含您之前定义的所有 hS, dS, imgModels
+// === 模型定义 (请在此处保留您完整的模型列表) ===
 const hS = [
   {id:"ent-gpt-5.2",name:"GPT-5.2",llmVersion:"gpt-5.2"},
   {id:"ent-gpt-5.1",name:"GPT-5.1",llmVersion:"gpt-5.1"},
@@ -65,9 +64,10 @@ const hS = [
   {id:"ent-claude-3-opus",name:"Claude 3 Opus",llmVersion:"claude-3-opus-latest"},
   {id:"ent-claude-3-opus-20240229",name:"Claude 3 Opus (20240229)",llmVersion:"claude-3-opus-20240229"},
   {id:"ent-claude-3-haiku",name:"Claude 3 Haiku",llmVersion:"claude-3-haiku-20240307"}
-  // ... 请在此处粘贴您原始代码中完整的 hS 和 dS 列表 ...
+  // ... 请确保这里包含您原始代码中的所有 Chat 模型 ...
 ];
-// 为了演示完整性，这里补充几个关键模型，实际部署时请使用您完整的 ALL_MODELS
+
+  // 为了演示完整性，这里补充几个关键模型，实际部署时请使用您完整的 ALL_MODELS
 const demoModels = [
     {id:"deepseek-prover-v2",name:"DeepSeek Prover V2"},
   {id:"deepseek-r1",name:"DeepSeek R1"},
@@ -116,19 +116,14 @@ const demoModels = [
   {id:"glm-4.5v",name:"GLM-4.5v"},
   {id:"glm-4.6",name:"GLM-4.6"},
   {id:"glm-4.7",name:"GLM-4.7"}
-];
 
 const imgModels = [
   {id:"sd-3.5-large",name:"SD 3.5 Large",provider:"Stability"},
   {id:"flux-dev",name:"Flux Dev",provider:"BFL"}
 ];
 
-// 将 hS, dS 合并，这里为了代码简洁使用了 demoModels，请替换为您原本的 [...hS, ...dS, ...imgModels]
-const ALL_MODELS = [...demoModels, ...imgModels]; 
-
-// === 缓存区域 ===
-// 用于存储 "模型ID -> 上游PersonaID" 的映射，避免重复创建 Persona
-const PERSONA_CACHE = new Map<string, number>();
+// 合并所有模型 (实际使用时请用 [...hS, ...dS, ...imgModels])
+const ALL_MODELS = [...hS, ...imgModels]; 
 
 // === 伪装头 ===
 function getCamouflagedHeaders(token: string) {
@@ -167,17 +162,21 @@ function convertMessagesToPrompt(messages: any[]): string {
 
 function getBackendModelConfig(requestedId: string) {
   const modelObj = ALL_MODELS.find(m => m.id === requestedId);
+  // 获取实际发给后端的版本号 (llmVersion)
   const version = modelObj ? (modelObj.llmVersion || modelObj.id) : requestedId;
   
-  // 智能推断 Provider
-  let provider = "OpenAI"; // 默认
+  // 智能推断 Provider (必须准确，否则后端会忽略 version)
+  let provider = "OpenAI"; // Default
   const vLower = version.toLowerCase();
   
   if (vLower.includes("claude")) provider = "Anthropic";
-  else if (vLower.includes("gemini") || vLower.includes("gemma")) provider = "Google"; // 或 "Gemini" 视上游而定，Google通常较稳
-  else if (vLower.includes("mistral") || vLower.includes("mixtral")) provider = "Mistral";
+  else if (vLower.includes("gemini") || vLower.includes("gemma")) provider = "Google";
+  else if (vLower.includes("mistral") || vLower.includes("mixtral") || vLower.includes("magistral")) provider = "Mistral";
   else if (vLower.includes("deepseek")) provider = "DeepSeek";
   else if (vLower.includes("grok")) provider = "xAI";
+  else if (vLower.includes("llama")) provider = "Meta";
+  else if (vLower.includes("minimax")) provider = "MiniMax";
+  else if (vLower.includes("qwen")) provider = "Alibaba";
   
   return { version, provider };
 }
@@ -198,7 +197,6 @@ Deno.serve(async (req) => {
     });
   }
 
-  // 获取鉴权 Token
   let authHeader = req.headers.get("Authorization");
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     authHeader = FALLBACK_TOKEN;
@@ -220,7 +218,7 @@ Deno.serve(async (req) => {
     });
   }
 
-  // 2. POST /v1/chat/completions (核心修改逻辑)
+  // 2. POST /v1/chat/completions
   if (url.pathname === "/v1/chat/completions" && method === "POST") {
     try {
       const body = await req.json();
@@ -230,54 +228,49 @@ Deno.serve(async (req) => {
       
       const { version: actualModelName, provider } = getBackendModelConfig(userModel);
 
-      // --- 关键修改：获取或创建 Persona ---
-      let personaId = PERSONA_CACHE.get(userModel);
+      // --- Step 1: Create Disposable Persona (模拟浏览器行为) ---
+      // 生成随机 Agent 名字，例如 "claude-opus-4-5 Agent v3631"
+      const randomSuffix = Math.floor(Math.random() * 9000) + 1000;
+      const agentName = `${actualModelName} Agent v${randomSuffix}`;
 
-      if (!personaId) {
-        // 缓存中没有，去创建一个新的 Persona
-        const personaPayload = {
-            name: `${userModel} Agent`, // 名字可以随意
-            description: `Auto-generated for ${userModel}`,
-            system_prompt: "You are a helpful assistant.",
-            task_prompt: "",
-            llm_model_provider_override: provider,
-            llm_model_version_override: actualModelName,
-            tool_ids: [],
-            is_public: false,
-            include_citations: false,
-            num_chunks: 0,
-            datetime_aware: false,
-            llm_filter_extraction: false,
-            llm_relevance_filter: false,
-            document_set_ids: [],
-            recency_bias: "no_decay"
-        };
+      const personaPayload = {
+        name: agentName,
+        description: `Direct chat with ${provider}`, // 尽量保持和抓包一致
+        system_prompt: "You are a helpful assistant.",
+        task_prompt: "",
+        llm_model_provider_override: provider,
+        llm_model_version_override: actualModelName,
+        tool_ids: [],
+        is_public: false,
+        include_citations: false,
+        num_chunks: 0,
+        datetime_aware: false,
+        llm_filter_extraction: false,
+        llm_relevance_filter: false,
+        document_set_ids: [],
+        recency_bias: "no_decay"
+      };
 
-        const personaResp = await fetch(`${UPSTREAM_ORIGIN}/sv5/persona`, {
-            method: "POST",
-            headers: headers,
-            body: JSON.stringify(personaPayload)
-        });
+      const personaResp = await fetch(`${UPSTREAM_ORIGIN}/sv5/persona`, {
+        method: "POST",
+        headers: headers,
+        body: JSON.stringify(personaPayload)
+      });
 
-        if (personaResp.ok) {
-            const personaData = await personaResp.json();
-            personaId = personaData.id;
-            if (personaId) {
-                PERSONA_CACHE.set(userModel, personaId);
-                console.log(`Created new persona for ${userModel}: ${personaId} (${provider})`);
-            }
-        } else {
-            console.error(`Failed to create persona for ${userModel}, falling back to default 837. Status: ${personaResp.status}`);
-            personaId = 837; // 降级到默认 ID (虽然可能模型不对，但至少能通)
-        }
+      if (!personaResp.ok) {
+        throw new Error(`Create Persona Failed: ${personaResp.status} - ${await personaResp.text()}`);
       }
 
-      // Step 2: Create Session (使用动态获取的 persona_id)
+      const personaData = await personaResp.json();
+      const personaId = personaData.id;
+      // console.log(`Created Persona: ${agentName} (ID: ${personaId})`);
+
+      // --- Step 2: Create Chat Session ---
       const sessionResp = await fetch(`${UPSTREAM_ORIGIN}/sv5/chat/create-chat-session`, {
         method: "POST",
         headers: headers,
         body: JSON.stringify({
-          persona_id: personaId, 
+          persona_id: personaId,
           description: "Chat Session"
         })
       });
@@ -286,7 +279,7 @@ Deno.serve(async (req) => {
       const sessionData = await sessionResp.json();
       const sessionId = sessionData.chat_session_id;
 
-      // Step 3: Send Message
+      // --- Step 3: Send Message ---
       const prompt = convertMessagesToPrompt(body.messages);
       const msgResp = await fetch(`${UPSTREAM_ORIGIN}/sv5/chat/send-message`, {
         method: "POST",
@@ -303,7 +296,7 @@ Deno.serve(async (req) => {
 
       if (!msgResp.ok) throw new Error(`Send Message Failed: ${msgResp.status}`);
 
-      // Step 4: Stream Response (Standard Parsing)
+      // --- Step 4: Stream Response ---
       const stream = msgResp.body;
       if (!stream) throw new Error("No upstream body");
 
@@ -358,7 +351,7 @@ Deno.serve(async (req) => {
           headers: { "Content-Type": "text/event-stream", "Access-Control-Allow-Origin": "*" }
         });
       } else {
-        // Non-Stream fallback logic
+        // Non-Stream Fallback
         const reader = readable.getReader();
         const decoder = new TextDecoder();
         let fullText = "";
@@ -401,7 +394,7 @@ Deno.serve(async (req) => {
       const prompt = body.prompt;
       let size = body.size || "1024x1024";
       if (!prompt) throw new Error("Missing prompt");
-      
+
       const imgPayload = {
         model: model,
         prompt: prompt,
