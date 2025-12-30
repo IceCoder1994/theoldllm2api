@@ -30,7 +30,7 @@ const hS = [
   },
   {
     id: "gemini-2.5-flash",
-    name: "Gemini 2.5 Flash,
+    name: "Gemini 2.5 Flash",
     provider: "Google",
     apiProvider: "p7",
     isProxy: true
@@ -42,6 +42,7 @@ const hS = [
     apiProvider: "p7",
     isProxy: true
   },
+  {
 id: "gemini-claude-sonnet-4-5-thinking",
     name: "Claude Sonnet 4.5 Thinking",
     provider: "Anthropic",
