@@ -9,7 +9,7 @@ const UPSTREAM_ORIGIN = "https://theoldllm.vercel.app";
 const DEFAULT_CHAT_MODEL = "ent-gpt-4o";
 
 // 默认 Token
-const FALLBACK_TOKEN = "Bearer on_tenant_65566e34-de7f-490a-b88f-32ac8203b659.FlFtgizBOIHSKUrSYbSiT23u7VK3-AHqf64TtjN5v0qP-8AD8QJQ6RLxl0zG9Cgjj5R5ICdgNYFBz9JSv3OJcN3LiKtA6oJTj9CF_1nKjkZQ-InxkNfhEzktF52PXVvFxy7H1IR5JH9PnmMo467YfkAzf8z8vbRmW9WUQcqhBEMuxogPfqAIL1b60F8wGup7WChnADayGVAXyg0ihs4K-fXRyiR7OvXRii05DGX9XT7KtJvb24-XY_VEmWi8OO_o";
+const FALLBACK_TOKEN = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imlmb3liemNoeHpoZ25nbWd1YmVtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQwMzAxNzQsImV4cCI6MjA3OTYwNjE3NH0.DVFrVEQlaSkkBiw2WCyuEooXBf1xo4yZLPtZ4yINTpo";
 
 // === 模型定义 ===
 const hS = [
